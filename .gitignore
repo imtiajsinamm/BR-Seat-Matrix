@@ -1,0 +1,11 @@
+# Local environment files and logs
+.env
+.env.*
+*.log
+
+# Dependencies (not required by the userscript)
+node_modules/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
