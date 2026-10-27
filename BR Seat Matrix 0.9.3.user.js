@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         BR Seat Matrix 0.9.2
+// @name         BR Seat Matrix 0.9.3
 // @namespace    local.railway.seatmatrix
-// @version      0.9.2
+// @version      0.9.3
 // @description  Find trains by route, or pick a train; seats + payable fares for every station pair (rate-limit aware, live rescan); plan split tickets and jump straight to buying them
 // @match        https://eticket.railway.gov.bd/*
 // @grant        none
@@ -307,20 +307,26 @@ function togglePlan(i, j, cls) {
     savePlan();
   }
 
+// ---- booking deep link: the site's own search page + our autopilot params ----
+  // doj must be DMY (e.g. 27-Oct-2026); train/class are optional (train lets the autopilot pick the card).
+  function bookingHref(from, to, dmy, train, cls) {
+    const u = new URL(location.origin + '/booking/train/search');
+    u.searchParams.set('fromcity', from);
+    u.searchParams.set('tocity', to);
+    u.searchParams.set('doj', dmy);
+    if (cls) u.searchParams.set('class', cls);
+    u.searchParams.set('bsm_autosearch', '1');
+    if (train) u.searchParams.set('bsm_train', train);
+    return u.href;
+  }
+
 function buyNext() {
     loadPlan();
     if (!PLAN?.tickets?.length) { setStatus('Plan is empty: scan a matrix, then click class blocks to add tickets.'); return; }
     const unbought = PLAN.tickets.filter(t => !t.bought);
     if (!unbought.length) { setStatus('All tickets in the plan are already marked bought. 🎉'); return; }
     const next = (PLAN.riskFirst ? [...unbought].sort((a, b) => a.seats - b.seats) : unbought)[0];
-    const u = new URL(location.origin + '/booking/train/search');
-    u.searchParams.set('fromcity', next.from);
-    u.searchParams.set('tocity', next.to);
-    u.searchParams.set('doj', next.doj);
-    if (next.cls) u.searchParams.set('class', next.cls);
-    u.searchParams.set('bsm_autosearch', '1');
-    u.searchParams.set('bsm_train', PLAN.train);
-    window.open(u.href, '_blank');            // new tab: panel + checklist stay visible here
+    window.open(bookingHref(next.from, next.to, next.doj, PLAN.train, next.cls), '_blank');   // new tab: panel + checklist stay visible here
     setStatus(`Opened ticket ${PLAN.tickets.length - unbought.length + 1}/${PLAN.tickets.length}: ${next.from} → ${next.to} (${next.cls}, ${next.seats} seats, ${next.doj}). Pick seats and pay there; come back and mark it done.`);
   }
 
@@ -379,6 +385,15 @@ function buyNext() {
     .bsm-card .bsm-sub { opacity:.75;font-size:11px;margin:2px 0 6px }
     .bsm-chips { display:flex;gap:6px;flex-wrap:wrap }
     .bsm-chip { border:1px solid #3a3a3d;border-radius:6px;padding:3px 8px;font-size:11px;background:#1b1b1d }
+    .bsm-cardtop { display:flex;gap:10px;align-items:flex-start;justify-content:space-between }
+    .bsm-card .bsm-sub { margin-bottom:6px }
+    .bsm-buy { background:#e08a3c !important;color:#111 !important;border:1px solid #e08a3c !important;
+      border-radius:6px;padding:5px 12px !important;font-weight:600 !important;font-size:12px !important;
+      cursor:pointer;white-space:nowrap }
+    .bsm-buy:hover { background:#f0a05c !important;border-color:#f0a05c !important }
+    .bsm-buychip { cursor:pointer;font-family:inherit;color:#eee;background:#1b1b1d !important;
+      border:1px solid #3a3a3d !important;padding:3px 8px !important;font-size:11px !important;text-align:left }
+    .bsm-buychip:hover { border-color:#e08a3c !important;background:#26262a !important }
     .bsm-planbar { border:1px solid #3a3a3d;border-radius:8px;margin-top:8px;padding:8px 10px;background:#232326 }
     .bsm-plhdr { display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:6px;font-weight:600 }
     .bsm-plrow { display:flex;gap:8px;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12px }
@@ -393,7 +408,7 @@ function buyNext() {
   </style>
   <button id="bsm-open">Seat Matrix</button>
   <div id="bsm-panel">
-    <div id="bsm-dragbar" class="bsm-dragbar">⋯ BR Seat Matrix v0.9.2 ⋯</div>
+    <div id="bsm-dragbar" class="bsm-dragbar">⋯ BR Seat Matrix v0.9.3 ⋯</div>
     <div class="bsm-body">
       <div class="bsm-hdr">
         <button id="bsm-mode-train" class="bsm-mode on">By train</button>
@@ -577,7 +592,7 @@ $('swap').onclick = () => {
   };
 
 const reset = () => {
-    R = null; $('out').innerHTML = '';
+    R = null; $('out').innerHTML = ''; CARDS = null;
     for (const id of ['from', 'to']) { $(id).disabled = true; $(id).innerHTML = '<option>load route first</option>'; }
   };
   $('train').oninput = reset;
@@ -787,9 +802,19 @@ function recallLastScan() {
   }
 
 $('out').addEventListener('click', e => {
-    const el = e.target.closest('.bsm-cls');
-    if (!el || el.dataset.i == null || !R?.mat) return;
-    togglePlan(+el.dataset.i, +el.dataset.j, el.dataset.cls);
+    const block = e.target.closest('.bsm-cls');                 // matrix cell → ticket plan
+    if (block) {
+      if (block.dataset.i == null || !R?.mat) return;
+      togglePlan(+block.dataset.i, +block.dataset.j, block.dataset.cls);
+      return;
+    }
+    const buy = e.target.closest('.bsm-buy, .bsm-buychip');      // By-route results → booking page
+    if (buy && CARDS && CARDS[+buy.dataset.i]) {
+      buyRouteTrain(CARDS[+buy.dataset.i], buy.dataset.cls || null);
+      return;
+    }
+    const card = e.target.closest('.bsm-card');                  // card body → load route
+    if (card && CARDS && CARDS[+card.dataset.i]) chooseTrain(CARDS[+card.dataset.i]);
   });
 
 $('buy').onclick = buyNext;
@@ -822,6 +847,7 @@ $('buy').onclick = buyNext;
     const trains = res?.data?.trains || [];
     if (!trains.length) {
       searched = null;
+      CARDS = null;
       $('out').innerHTML = '';
       setStatus('No trains found for that route on that date. Check the spelling (station names must match the site).');
       return;
@@ -831,11 +857,35 @@ $('buy').onclick = buyNext;
     setStatus(`${trains.length} train(s) found. Click one to load its full route.`);
   }
 
-function chipHTML(t) {
+function chipHTML(t, idx, trainNo) {
     const num = `<span class="bsm-c-${tierOf(t.total)}" style="font-weight:700">${t.total}</span>`;
-    return `<span class="bsm-chip">${esc(t.name)} ${num}` +
-      (t.pay != null ? ` <span class="bsm-fare">${esc(t.pay)} TK</span>` : '') + '</span>';
+    const label = `${esc(t.name)} ${num}` + (t.pay != null ? ` <span class="bsm-fare">${esc(t.pay)} TK</span>` : '');
+    return `<button type="button" class="bsm-chip bsm-buychip" data-i="${idx}" data-cls="${esc(t.name)}"` +
+      ` title="Open the site's booking page for train ${esc(trainNo || '?')}, class ${esc(t.name)}">${label}</button>`;
   }
+
+// The class we'd suggest for a one-click buy: most seats, then cheapest payable fare.
+  function bestClassOf(types) {
+    const best = [...types].sort((a, b) =>
+      (b.total - a.total) || ((a.pay ?? Infinity) - (b.pay ?? Infinity)))[0];
+    return best ? best.name : null;
+  }
+
+// Jump straight to the site's booking flow for one train (and class) from the By-route results.
+  function buyRouteTrain(t, cls) {
+    if (!searched) { setStatus('Search by route first, then use Buy.'); return; }
+    const num = trainNoOf(t.trip_number);
+    const types = typesOf(t);
+    const pick = cls || bestClassOf(types);
+    const type = types.find(x => x.name === pick) || null;
+    window.open(bookingHref(searched.from, searched.to, toDMY(searched.date), num, pick), '_blank');
+    setStatus(`Opened the site's booking page: ${searched.from} → ${searched.to} on ${toDMY(searched.date)}` +
+      (num ? `, train ${num}` : '') + (pick ? `, class ${pick}` : '') +
+      (type ? ` (${type.total} seats, ${type.pay != null ? type.pay + ' TK' : 'price ?'} when scanned)` : '') +
+      '. The helper selects that train and the fullest coach; pick your seats and pay there.');
+  }
+
+let CARDS = null;   // the train list currently shown in By-route mode, for delegated clicks
 
 function renderTrains(trains) {
     let h = '';
@@ -843,15 +893,18 @@ function renderTrains(trains) {
       const types = typesOf(t);
       const num = trainNoOf(t.trip_number);
       h += `<div class="bsm-card" data-i="${idx}">
-        <b>${esc(String(t.trip_number || '?').replace(/\s*\(\d+\)\s*$/, ''))}</b>${num ? ` <span class="bsm-fare">#${esc(num)}</span>` : ''}
+        <div class="bsm-cardtop">
+          <span><b>${esc(String(t.trip_number || '?').replace(/\s*\(\d+\)\s*$/, ''))}</b>${num ? ` <span class="bsm-fare">#${esc(num)}</span>` : ''}</span>
+          ${num ? `<button type="button" class="bsm-buy" data-i="${idx}"` +
+            ` title="Open the site's booking page for (${esc(num)})${types.length ? ', class ' + esc(bestClassOf(types)) : ''}">Buy tickets ↗</button>` : ''}
+        </div>
         <div class="bsm-sub">Departs ${esc(t.departure_date_time || '?')} · ${types.reduce((a, x) => a + x.total, 0)} seats total</div>
-        <div class="bsm-chips">${types.map(chipHTML).join('') || '<span class="bsm-dim">no seat data</span>'}</div>
+        <div class="bsm-chips">${types.map(x => chipHTML(x, idx, num)).join('') || '<span class="bsm-dim">no seat data</span>'}</div>
       </div>`;
     });
-    h += '<div class="bsm-legend">Click a train to load its route. Click a card again or use By train mode to rescan.</div>';
+    h += '<div class="bsm-legend"><b>Buy tickets ↗</b> jumps to the site\'s booking page for that train (fullest class preselected). Click a class chip to buy that exact class; click the card body to load the train\'s full route here instead.</div>';
     $('out').innerHTML = h;
-    [...$('out').querySelectorAll('.bsm-card')].forEach(el =>
-      el.onclick = () => chooseTrain(trains[+el.dataset.i]));
+    CARDS = trains;
   }
 
 async function chooseTrain(t) {

@@ -1,12 +1,13 @@
 # BR Seat Matrix
 
-**Version 0.9.2** — a browser userscript for the [Bangladesh Railway e-ticket website](https://eticket.railway.gov.bd/).
+**Version 0.9.3** — a browser userscript for the [Bangladesh Railway e-ticket website](https://eticket.railway.gov.bd/).
 
 Search trains, inspect seat availability and calculated fares across station pairs, and plan split tickets.
 
 ## Features
 
 - Search by route or load a train's route by train number.
+- **Buy tickets ↗** on any By-route result jumps straight to the site's booking page for that train, with the fullest class preselected — no re-searching on the site.
 - Scan station pairs for seat counts and fares by class.
 - Refresh availability with **Rescan live**, or recall the last saved scan.
 - Handle overnight routes with station-specific date offsets.
@@ -17,7 +18,7 @@ Search trains, inspect seat availability and calculated fares across station pai
 ## Install
 
 1. Install a browser userscript manager, such as Tampermonkey or Violentmonkey.
-2. Open `BR Seat Matrix 0.9.2.user.js` from this repository and view its **Raw** contents. If your manager offers to install it, confirm the installation.
+2. Open `BR Seat Matrix 0.9.3.user.js` from this repository and view its **Raw** contents. If your manager offers to install it, confirm the installation.
 3. Alternatively, create a new script in your userscript manager, replace the editor contents with the entire file, and save it.
 4. Visit `https://eticket.railway.gov.bd/`, log in normally, and reload the page.
 5. Click the **Seat Matrix** button.
@@ -38,6 +39,9 @@ No build step or package installation is required for the script itself.
 1. Switch to **By route**.
 2. Choose the date you leave your **From** station.
 3. Enter the origin and destination, then click **Find trains**.
+4. In the results, press **Buy tickets ↗** on a train to open its booking page on the site (the class with the most seats is preselected), or click a class chip to buy that specific class. Click the card body instead to load the train's full route into **By train** mode.
+
+The Buy button opens the site's own search page with the route, date, train and class already filled in; the helper then clicks that train's **BOOK NOW** and switches to the coach with the most seats. You still choose seats and complete payment on the site.
 
 ### Split-ticket planning
 
@@ -61,7 +65,7 @@ The supplied JavaScript file is preserved byte-for-byte. A Node.js syntax check 
 To repeat the syntax-only check locally, with Node.js installed:
 
 ```sh
-node --check "BR Seat Matrix 0.9.2.user.js"
+node --check "BR Seat Matrix 0.9.3.user.js"
 ```
 
 ## License
